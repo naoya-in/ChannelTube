@@ -13,6 +13,7 @@ import yt_dlp
 from plexapi.server import PlexServer
 import requests
 import tempfile
+import shlex
 
 
 class DataHandler:
@@ -56,6 +57,9 @@ class DataHandler:
 
         full_cookies_path = os.path.join(self.config_folder, "cookies.txt")
         self.cookies_path = full_cookies_path if os.path.exists(full_cookies_path) else None
+
+        self.ytdlp_options = os.environ.get("YTDLP_OPTIONS", "")
+        self.ytdlp_options_list = shlex.split(self.ytdlp_options)
 
         task_thread = threading.Thread(target=self.schedule_checker, daemon=True)
         task_thread.start()
@@ -164,6 +168,12 @@ class DataHandler:
         }
         if search_limit:
             ydl_opts["playlist_items"] = f"1-{search_limit}"
+
+        # Add custom yt-dlp options
+        for opt in self.ytdlp_options_list:
+            key, value = opt.split('=', 1) if '=' in opt else (opt, True)
+            ydl_opts[key] = value
+
         ydl = yt_dlp.YoutubeDL(ydl_opts)
 
         if "playlist?list" in channel_link.lower():
@@ -375,20 +385,21 @@ class DataHandler:
                         }
                     )
 
+
                 post_processors.extend(
                     [
                         {"key": "FFmpegMetadata"},
                         {"key": "EmbedThumbnail"},
                     ]
-                )
+               
+ )
 
                 folder_and_filename = os.path.join(channel_folder_path, cleaned_title)
                 ydl_opts = {
                     "paths": {"home": channel_folder_path, "temp": temp_dir.name},
                     "logger": self.general_logger,
                     "ffmpeg_location": "/usr/bin/ffmpeg",
-                    "format": selected_format,
-                    "outtmpl": f"{cleaned_title}.%(ext)s",
+                    "forselected_tmpl": cleaned_title + ".%(ext)s",
                     "quiet": True,
                     "writethumbnail": True,
                     "progress_hooks": [self.progress_callback],
@@ -397,10 +408,11 @@ class DataHandler:
                     "live_from_start": True,
                     "extractor_args": {"youtubetab": {"skip": ["authcheck"]}},
                 }
-                if merge_output_format:
-                    ydl_opts["merge_output_format"] = merge_output_format
-                if self.cookies_path:
-                    ydl_opts["cookiefile"] = self.cookies_path
+
+                # Add custom yt-dlp options
+                for opt in self.ytdlp_options_list:
+                    key, value = opt.split('=', 1) if '=' in opt else (opt, True)
+                    ydl_opts[key] = value
 
                 yt_downloader = yt_dlp.YoutubeDL(ydl_opts)
                 self.general_logger.warning(f"yt_dlp -> Starting to download: {link}")
